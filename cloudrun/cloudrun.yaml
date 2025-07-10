@@ -1,0 +1,73 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: data-ingestion-service
+  namespace: '366008494339'
+  selfLink: >-
+    /apis/serving.knative.dev/v1/namespaces/366008494339/services/data-ingestion-service
+  uid: 987c136e-0b12-450f-bd3a-775ad384911e
+  resourceVersion: AAY5e8hjc0k
+  generation: 12
+  creationTimestamp: '2025-07-08T17:01:58.557980Z'
+  labels:
+    run.googleapis.com/satisfiesPzs: 'true'
+    cloud.googleapis.com/location: asia-southeast1
+  annotations:
+    serving.knative.dev/creator: qbao2805@gmail.com
+    serving.knative.dev/lastModifier: qbao2805@gmail.com
+    run.googleapis.com/client-name: gcloud
+    run.googleapis.com/client-version: 522.0.0
+    run.googleapis.com/operation-id: 6a04ea2f-6a61-49cc-a991-3d7e56355b28
+    run.googleapis.com/ingress: all
+    run.googleapis.com/ingress-status: all
+    run.googleapis.com/urls: >-
+      ["https://data-ingestion-service-366008494339.asia-southeast1.run.app","https://data-ingestion-service-ud5pi5bwfq-as.a.run.app"]
+spec:
+  template:
+    metadata:
+      labels:
+        client.knative.dev/nonce: oahfpfbuam
+        run.googleapis.com/startupProbeType: Default
+      annotations:
+        autoscaling.knative.dev/maxScale: '10'
+        run.googleapis.com/client-name: gcloud
+        run.googleapis.com/client-version: 522.0.0
+        run.googleapis.com/startup-cpu-boost: 'true'
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 540
+      serviceAccountName: data-ingestion-sa@competitor-destroyer.iam.gserviceaccount.com
+      containers:
+      - image: 'gcr.io/competitor-destroyer/data-ingestion-service:v1.3'
+        ports:
+        - name: http1
+          containerPort: 8080
+        env:
+        - name: GOOGLE_CLOUD_PROJECT
+          value: competitor-destroyer
+        - name: PUBSUB_TOPIC_PREFIX
+          value: social-analytics
+        - name: GCS_BUCKET_RAW_DATA
+          value: social-analytics-raw-data
+        - name: GCS_BUCKET_PROCESSED_DATA
+          value: social-analytics-processed-data
+        - name: BIGQUERY_DATASET
+          value: social_analytics
+        - name: BRIGHTDATA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              key: latest
+              name: brightdata-api-key
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        startupProbe:
+          timeoutSeconds: 240
+          periodSeconds: 240
+          failureThreshold: 1
+          tcpSocket:
+            port: 8080
+  traffic:
+  - revisionName: data-ingestion-service-00008-7qq
+    percent: 100

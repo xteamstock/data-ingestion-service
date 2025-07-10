@@ -1,0 +1,77 @@
+# Cloud Build configuration for Data Ingestion Service
+# This file enables Cloud Build triggers for continuous deployment
+
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-t', 'gcr.io/$PROJECT_ID/data-ingestion-service:$COMMIT_SHA',
+      '-t', 'gcr.io/$PROJECT_ID/data-ingestion-service:latest',
+      '.'
+    ]
+
+  # Push the Docker image to GCR
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/data-ingestion-service:$COMMIT_SHA']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/data-ingestion-service:latest']
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args: [
+      'run', 'deploy', 'data-ingestion-service',
+      '--image=gcr.io/$PROJECT_ID/data-ingestion-service:$COMMIT_SHA',
+      '--region=asia-southeast1',
+      '--service-account=data-ingestion-sa@$PROJECT_ID.iam.gserviceaccount.com',
+      '--allow-unauthenticated',
+      '--memory=1Gi',
+      '--cpu=1',
+      '--max-instances=10',
+      '--timeout=540',
+      '--concurrency=80',
+      '--startup-cpu-boost',
+      '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,PUBSUB_TOPIC_PREFIX=social-analytics,GCS_BUCKET_RAW_DATA=social-analytics-raw-data,GCS_BUCKET_PROCESSED_DATA=social-analytics-processed-data,BIGQUERY_DATASET=social_analytics',
+      '--set-secrets=BRIGHTDATA_API_KEY=brightdata-api-key:latest',
+      '--port=8080'
+    ]
+
+  # Update traffic to latest revision
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'gcloud'
+    args: [
+      'run', 'services', 'update-traffic', 'data-ingestion-service',
+      '--to-latest',
+      '--region=asia-southeast1'
+    ]
+
+  # Verify deployment
+  - name: 'gcr.io/cloud-builders/curl'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        SERVICE_URL=$(gcloud run services describe data-ingestion-service --region=asia-southeast1 --format="value(status.url)")
+        echo "Service deployed at: $$SERVICE_URL"
+        curl -f "$$SERVICE_URL/health" || exit 1
+        echo "✅ Health check passed"
+
+# Specify the images to be stored in Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/data-ingestion-service:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/data-ingestion-service:latest'
+
+# Build configuration
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: ALLOW_LOOSE
+
+# Timeout for the entire build
+timeout: '1200s'
+
+# Build steps timeout
+substitutions:
+  _SERVICE_NAME: 'data-ingestion-service'
+  _REGION: 'asia-southeast1'
