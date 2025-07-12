@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
 from handlers.crawl_handler import CrawlHandler
 from events.event_publisher import EventPublisher
+from platforms.registry import get_platform_handler
+from platforms.base import APIProvider
 import os
 import logging
 import time
@@ -75,8 +77,25 @@ def background_poll_and_download(crawl_id: str):
                 
                 snapshot_id = crawl_metadata['snapshot_id']
                 
-                # Check BrightData status (reusing existing method)
-                is_ready, error = crawl_handler.brightdata_client.poll_crawl_status(snapshot_id)
+                # Get platform to use correct API client
+                platform = crawl_metadata.get('crawl_params', {}).get('platform', 'facebook')
+                platform_handler = get_platform_handler(platform)
+                
+                # Check status with appropriate API client
+                if platform_handler and platform_handler.config.api_provider == APIProvider.BRIGHTDATA:
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    status_result = loop.run_until_complete(crawl_handler.brightdata_client.check_status(snapshot_id))
+                    is_ready = status_result.get('is_ready', False)
+                    error = status_result.get('error')
+                else:  # Apify
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    status_result = loop.run_until_complete(crawl_handler.apify_client.check_status(snapshot_id))
+                    is_ready = status_result.get('is_ready', False)
+                    error = status_result.get('error')
                 
                 if error:
                     logger.error(f"BrightData error for {crawl_id}: {error}")
@@ -94,7 +113,11 @@ def background_poll_and_download(crawl_id: str):
                     logger.info(f"Crawl {crawl_id} is ready for download (poll {poll_count}/{max_polls})")
                     
                     # Reuse existing download logic
-                    download_result = crawl_handler.download_data(crawl_id)
+                    # Handle async download
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    download_result = loop.run_until_complete(crawl_handler.download_data(crawl_id))
                     
                     if download_result['status'] == 'success':
                         # Reuse existing event publishing logic
@@ -181,8 +204,11 @@ def trigger_crawl():
         crawl_params = request.json
         logger.info(f"Triggering crawl with params: {crawl_params}")
         
-        # Trigger BrightData crawl
-        result = crawl_handler.trigger_crawl(crawl_params)
+        # Trigger crawl (handle async method)
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(crawl_handler.trigger_crawl(crawl_params))
         
         if result['status'] == 'success':
             # Publish crawl triggered event
@@ -223,7 +249,11 @@ def download_crawl_data(crawl_id):
     try:
         logger.info(f"Downloading data for crawl_id: {crawl_id}")
         
-        result = crawl_handler.download_data(crawl_id)
+        # Handle async download method
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(crawl_handler.download_data(crawl_id))
         
         if result['status'] == 'success':
             # Publish ingestion completed event
@@ -259,8 +289,29 @@ def get_crawl_status(crawl_id):
         snapshot_id = crawl_metadata['snapshot_id']
         logger.info(f"Found snapshot_id: {snapshot_id} for crawl_id: {crawl_id}")
         
-        # Check status with BrightData (read-only operation)
-        is_ready, error = crawl_handler.brightdata_client.poll_crawl_status(snapshot_id)
+        # Get platform to use correct API client
+        platform = crawl_metadata.get('crawl_params', {}).get('platform', 'facebook')
+        platform_handler = get_platform_handler(platform)
+        
+        # Check status with appropriate API client
+        if platform_handler and platform_handler.config.api_provider == APIProvider.BRIGHTDATA:
+            # Handle async check_status
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            status_result = loop.run_until_complete(crawl_handler.brightdata_client.check_status(snapshot_id))
+            is_ready = status_result.get('is_ready', False)
+            error = status_result.get('error')
+        elif platform_handler:  # Apify
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            status_result = loop.run_until_complete(crawl_handler.apify_client.check_status(snapshot_id))
+            is_ready = status_result.get('is_ready', False)
+            error = status_result.get('error')
+        else:
+            is_ready = False
+            error = f"Unknown platform: {platform}"
         
         # Determine status based on BrightData response
         if error:

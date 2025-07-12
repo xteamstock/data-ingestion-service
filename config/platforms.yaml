@@ -1,0 +1,33 @@
+# Platform configuration for Data Ingestion Service
+# This file defines the configuration for each supported social media platform
+
+platforms:
+  facebook:
+    name: "Facebook"
+    api_provider: "brightdata"
+    dataset_id: "gd_lkaxegm826bjpoo9m5"
+    date_format: "MM-DD-YYYY"
+    required_params: ["url"]
+    optional_params: ["num_of_posts", "start_date", "end_date", "include_profile_data"]
+    api_endpoint: "https://api.brightdata.com/datasets/v3/trigger"
+    media_fields: ["attachments"]
+    
+  tiktok:
+    name: "TikTok"
+    api_provider: "apify"
+    dataset_id: "clockworks/tiktok-scraper"
+    date_format: "YYYY-MM-DD"
+    required_params: ["url"]
+    optional_params: ["country", "start_date", "end_date", "num_of_posts"]
+    api_endpoint: null  # Not needed for Apify - client handles URLs internally
+    media_fields: ["videoMeta", "webVideoUrl"]
+    
+  youtube:
+    name: "YouTube"
+    api_provider: "apify"
+    dataset_id: "streamers/youtube-scraper"
+    date_format: "YYYY-MM-DD"
+    required_params: ["url"]
+    optional_params: ["date_filter", "video_type", "quality_filters", "sorting", "start_date", "num_of_posts"]
+    api_endpoint: null  # Not needed for Apify - client handles URLs internally
+    media_fields: ["thumbnailUrl", "url"]

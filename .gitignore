@@ -28,3 +28,24 @@ Thumbs.db
 # Testing
 .pytest_cache/
 .coverage
+
+# Sample/Test Data (exclude from tracking)
+sample/
+tests/data/
+temp/
+legacy/
+
+# Development Scripts (exclude from tracking)
+dev/
+debug_*.py
+local_dev_server.py
+manual_test_requests.sh
+run_test.py
+setup_test_environment.py
+
+# One-off setup logs and results
+setup_log.md
+test_results.md
+
+# Scattered test files (should be in tests/)
+test_*.py
