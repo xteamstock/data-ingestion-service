@@ -47,10 +47,10 @@ class CrawlHandler:
             api_token=os.getenv('APIFY_API_TOKEN')
         )
         
-        # Initialize Google Cloud clients
-        self.storage_client = storage.Client()
-        self.bigquery_client = bigquery.Client()
-        self.event_publisher = EventPublisher()
+        # Initialize Google Cloud clients (lazy initialization)
+        self._storage_client = None
+        self._bigquery_client = None
+        self._event_publisher = None
         
         # Configuration from environment variables
         self.raw_data_bucket = os.getenv('GCS_BUCKET_RAW_DATA', 'social-analytics-raw-data')
@@ -69,6 +69,27 @@ class CrawlHandler:
         
         # Background processing executor
         self.executor = ThreadPoolExecutor(max_workers=self.background_max_workers)
+    
+    @property
+    def storage_client(self):
+        """Lazy initialization of storage client"""
+        if self._storage_client is None:
+            self._storage_client = storage.Client()
+        return self._storage_client
+    
+    @property
+    def bigquery_client(self):
+        """Lazy initialization of BigQuery client"""
+        if self._bigquery_client is None:
+            self._bigquery_client = bigquery.Client()
+        return self._bigquery_client
+    
+    @property
+    def event_publisher(self):
+        """Lazy initialization of event publisher"""
+        if self._event_publisher is None:
+            self._event_publisher = EventPublisher()
+        return self._event_publisher
     
     async def trigger_crawl(self, crawl_params: Dict[str, Any]) -> Dict[str, Any]:
         """

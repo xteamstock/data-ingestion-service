@@ -25,9 +25,16 @@ class EventPublisher:
     
     def __init__(self):
         """Initialize the event publisher."""
-        self.publisher = pubsub_v1.PublisherClient()
+        self._publisher = None
         self.project_id = os.getenv('GOOGLE_CLOUD_PROJECT', 'competitor-destroyer')
         self.topic_prefix = os.getenv('PUBSUB_TOPIC_PREFIX', 'social-analytics')
+    
+    @property
+    def publisher(self):
+        """Lazy initialization of publisher client"""
+        if self._publisher is None:
+            self._publisher = pubsub_v1.PublisherClient()
+        return self._publisher
     
     def publish(self, event_type: str, event_data: Dict[str, Any]) -> bool:
         """

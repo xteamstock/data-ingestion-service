@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 from handlers.crawl_handler import CrawlHandler
-from events.event_publisher import EventPublisher
 from platforms.registry import get_platform_handler
 from platforms.base import APIProvider
 import os
@@ -19,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 # Initialize components
 crawl_handler = CrawlHandler()
-event_publisher = EventPublisher()
 
 # Background processing configuration
 BACKGROUND_CONFIG = {
@@ -37,18 +35,34 @@ BACKGROUND_CONFIG = {
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check with background task status"""
-    crawl_handler_polling_enabled = os.getenv('BACKGROUND_POLLING_ENABLED', 'true').lower() == 'true'
-    
-    return jsonify({
-        'status': 'healthy', 
-        'service': 'data-ingestion',
-        'background_processing': {
-            'enabled': crawl_handler_polling_enabled,
-            'handler': 'CrawlHandler',
-            'poll_interval_seconds': int(os.getenv('BACKGROUND_POLL_INTERVAL', '30')),
-            'max_workers': int(os.getenv('BACKGROUND_MAX_WORKERS', '10'))
+    try:
+        crawl_handler_polling_enabled = os.getenv('BACKGROUND_POLLING_ENABLED', 'true').lower() == 'true'
+        
+        # Test that we can access environment variables
+        env_check = {
+            'GOOGLE_CLOUD_PROJECT': bool(os.getenv('GOOGLE_CLOUD_PROJECT')),
+            'GCS_BUCKET_RAW_DATA': bool(os.getenv('GCS_BUCKET_RAW_DATA')),
+            'BRIGHTDATA_API_KEY': bool(os.getenv('BRIGHTDATA_API_KEY')),
+            'APIFY_API_TOKEN': bool(os.getenv('APIFY_API_TOKEN'))
         }
-    })
+        
+        return jsonify({
+            'status': 'healthy', 
+            'service': 'data-ingestion',
+            'environment_check': env_check,
+            'background_processing': {
+                'enabled': crawl_handler_polling_enabled,
+                'handler': 'CrawlHandler',
+                'poll_interval_seconds': int(os.getenv('BACKGROUND_POLL_INTERVAL', '30')),
+                'max_workers': int(os.getenv('BACKGROUND_MAX_WORKERS', '10'))
+            }
+        })
+    except Exception as e:
+        logger.error(f"Health check error: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
 
 @app.route('/api/v1/crawl/trigger', methods=['POST'])
 def trigger_crawl():
@@ -65,7 +79,7 @@ def trigger_crawl():
         
         if result['status'] == 'success':
             # Publish crawl triggered event
-            event_publisher.publish_crawl_triggered(
+            crawl_handler.event_publisher.publish_crawl_triggered(
                 result['crawl_id'],
                 result['snapshot_id'],
                 crawl_params
@@ -109,7 +123,7 @@ def download_crawl_data(crawl_id):
         
         if result['status'] == 'success':
             # Publish ingestion completed event
-            event_publisher.publish_data_ingestion_completed(
+            crawl_handler.event_publisher.publish_data_ingestion_completed(
                 result['crawl_id'],
                 result['snapshot_id'],
                 result['gcs_path'],
