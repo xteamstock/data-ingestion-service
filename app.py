@@ -5,14 +5,13 @@ from platforms.registry import get_platform_handler
 from platforms.base import APIProvider
 import os
 import logging
-import time
-import threading
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Load environment variables from .env file (for local development only)
+# In Cloud Run, environment variables are set via cloudrun.yaml
+if os.path.exists('.env'):
+    load_dotenv()
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -31,169 +30,23 @@ BACKGROUND_CONFIG = {
     'enabled': os.getenv('BACKGROUND_POLLING_ENABLED', 'true').lower() == 'true'
 }
 
-# Background task management
-executor = ThreadPoolExecutor(
-    max_workers=BACKGROUND_CONFIG['max_workers'], 
-    thread_name_prefix="crawl-poller"
-)
-active_background_tasks = set()
-task_lock = threading.Lock()
-
-def background_poll_and_download(crawl_id: str):
-    """
-    Background task: Poll BrightData status and auto-download when ready.
-    
-    This function reuses existing crawl handler methods to:
-    1. Poll BrightData status every 30 seconds
-    2. Download data when ready
-    3. Publish completion events
-    4. Handle errors and timeouts
-    """
-    logger.info(f"Starting background polling for crawl {crawl_id}")
-    
-    # Track this task
-    with task_lock:
-        active_background_tasks.add(crawl_id)
-    
-    try:
-        poll_count = 0
-        max_polls = BACKGROUND_CONFIG['max_polls']
-        poll_interval = BACKGROUND_CONFIG['poll_interval']
-        
-        while poll_count < max_polls:
-            poll_count += 1
-            
-            try:
-                # Reuse existing status checking logic
-                crawl_metadata = crawl_handler._get_crawl_metadata(crawl_id)
-                if not crawl_metadata:
-                    logger.error(f"Crawl metadata not found for {crawl_id}")
-                    event_publisher.publish_crawl_failed(
-                        crawl_id, 
-                        "Crawl metadata not found", 
-                        "metadata_lookup"
-                    )
-                    break
-                
-                snapshot_id = crawl_metadata['snapshot_id']
-                
-                # Get platform to use correct API client
-                platform = crawl_metadata.get('crawl_params', {}).get('platform', 'facebook')
-                platform_handler = get_platform_handler(platform)
-                
-                # Check status with appropriate API client
-                if platform_handler and platform_handler.config.api_provider == APIProvider.BRIGHTDATA:
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    status_result = loop.run_until_complete(crawl_handler.brightdata_client.check_status(snapshot_id))
-                    is_ready = status_result.get('is_ready', False)
-                    error = status_result.get('error')
-                else:  # Apify
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    status_result = loop.run_until_complete(crawl_handler.apify_client.check_status(snapshot_id))
-                    is_ready = status_result.get('is_ready', False)
-                    error = status_result.get('error')
-                
-                if error:
-                    logger.error(f"BrightData error for {crawl_id}: {error}")
-                    # Don't fail immediately - might be temporary
-                    if poll_count >= max_polls - 5:  # Only fail on last few attempts
-                        event_publisher.publish_crawl_failed(
-                            crawl_id,
-                            f"BrightData polling error: {error}",
-                            "brightdata_error"
-                        )
-                        break
-                    # Continue polling on temporary errors
-                    
-                elif is_ready:
-                    logger.info(f"Crawl {crawl_id} is ready for download (poll {poll_count}/{max_polls})")
-                    
-                    # Reuse existing download logic
-                    # Handle async download
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    download_result = loop.run_until_complete(crawl_handler.download_data(crawl_id))
-                    
-                    if download_result['status'] == 'success':
-                        # Reuse existing event publishing logic
-                        event_publisher.publish_data_ingestion_completed(
-                            download_result['crawl_id'],
-                            download_result['snapshot_id'],
-                            download_result['gcs_path'],
-                            download_result['post_count'],
-                            download_result['media_count']
-                        )
-                        logger.info(f"Successfully completed background processing for {crawl_id}")
-                    else:
-                        logger.error(f"Download failed for {crawl_id}: {download_result.get('message')}")
-                        event_publisher.publish_crawl_failed(
-                            crawl_id,
-                            download_result.get('message', 'Download failed'),
-                            "download_failure"
-                        )
-                    break
-                    
-                else:
-                    # Still processing - continue polling
-                    logger.debug(f"Crawl {crawl_id} not ready yet, poll {poll_count}/{max_polls}")
-                
-            except Exception as poll_error:
-                logger.error(f"Poll attempt {poll_count} failed for {crawl_id}: {str(poll_error)}")
-                if poll_count >= max_polls - 3:  # Fail if last few attempts error
-                    event_publisher.publish_crawl_failed(
-                        crawl_id,
-                        f"Polling error: {str(poll_error)}",
-                        "polling_exception"
-                    )
-                    break
-            
-            # Wait before next poll (unless this was the last attempt)
-            if poll_count < max_polls:
-                time.sleep(poll_interval)
-        
-        # Handle timeout scenario
-        if poll_count >= max_polls:
-            timeout_minutes = (max_polls * poll_interval) // 60
-            logger.warning(f"Polling timeout for crawl {crawl_id} after {timeout_minutes} minutes")
-            event_publisher.publish_crawl_failed(
-                crawl_id,
-                f"Polling timeout after {timeout_minutes} minutes",
-                "polling_timeout"
-            )
-            
-    except Exception as e:
-        logger.error(f"Background polling failed for {crawl_id}: {str(e)}")
-        event_publisher.publish_crawl_failed(
-            crawl_id,
-            f"Background processing error: {str(e)}",
-            "background_exception"
-        )
-        
-    finally:
-        # Remove from active tasks
-        with task_lock:
-            active_background_tasks.discard(crawl_id)
-        logger.info(f"Background polling completed for {crawl_id}")
+# Note: Background processing is now handled entirely by CrawlHandler
+# This eliminates duplicate polling and race conditions
 
 
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check with background task status"""
-    with task_lock:
-        active_count = len(active_background_tasks)
+    crawl_handler_polling_enabled = os.getenv('BACKGROUND_POLLING_ENABLED', 'true').lower() == 'true'
     
     return jsonify({
         'status': 'healthy', 
         'service': 'data-ingestion',
-        'background_tasks': {
-            'active_count': active_count,
-            'max_workers': BACKGROUND_CONFIG['max_workers'],
-            'enabled': BACKGROUND_CONFIG['enabled']
+        'background_processing': {
+            'enabled': crawl_handler_polling_enabled,
+            'handler': 'CrawlHandler',
+            'poll_interval_seconds': int(os.getenv('BACKGROUND_POLL_INTERVAL', '30')),
+            'max_workers': int(os.getenv('BACKGROUND_MAX_WORKERS', '10'))
         }
     })
 
@@ -218,17 +71,16 @@ def trigger_crawl():
                 crawl_params
             )
             
-            # Start background polling if enabled
-            if BACKGROUND_CONFIG['enabled']:
-                logger.info(f"Starting background polling for crawl {result['crawl_id']}")
-                executor.submit(background_poll_and_download, result['crawl_id'])
-                
-                # Enhance response with background processing info
+            # Background polling is handled by CrawlHandler
+            # Check if CrawlHandler background polling is enabled
+            crawl_handler_polling_enabled = os.getenv('BACKGROUND_POLLING_ENABLED', 'true').lower() == 'true'
+            
+            if crawl_handler_polling_enabled:
                 result['background_processing'] = {
                     'enabled': True,
                     'status': 'started',
-                    'poll_interval_seconds': BACKGROUND_CONFIG['poll_interval'],
-                    'max_polling_time_minutes': (BACKGROUND_CONFIG['max_polls'] * BACKGROUND_CONFIG['poll_interval']) // 60,
+                    'poll_interval_seconds': int(os.getenv('BACKGROUND_POLL_INTERVAL', '30')),
+                    'max_polling_time_minutes': (int(os.getenv('BACKGROUND_MAX_POLLS', '120')) * int(os.getenv('BACKGROUND_POLL_INTERVAL', '30'))) // 60,
                     'message': 'Background polling started - crawl will auto-download when ready'
                 }
             else:
@@ -344,19 +196,18 @@ def get_crawl_status(crawl_id):
         }
         
         # Include background processing status
-        with task_lock:
-            is_background_active = crawl_id in active_background_tasks
+        crawl_handler_polling_enabled = os.getenv('BACKGROUND_POLLING_ENABLED', 'true').lower() == 'true'
         
         response['background_processing'] = {
-            'enabled': BACKGROUND_CONFIG['enabled'],
-            'active': is_background_active,
-            'status': 'polling' if is_background_active else ('completed' if status == 'ready' else 'not_started'),
-            'poll_interval_seconds': BACKGROUND_CONFIG['poll_interval'],
-            'max_polling_time_minutes': (BACKGROUND_CONFIG['max_polls'] * BACKGROUND_CONFIG['poll_interval']) // 60
+            'enabled': crawl_handler_polling_enabled,
+            'handler': 'CrawlHandler',
+            'status': 'handled_by_crawl_handler',
+            'poll_interval_seconds': int(os.getenv('BACKGROUND_POLL_INTERVAL', '30')),
+            'max_polling_time_minutes': (int(os.getenv('BACKGROUND_MAX_POLLS', '120')) * int(os.getenv('BACKGROUND_POLL_INTERVAL', '30'))) // 60
         }
         
         # Estimate completion time if still processing
-        if is_background_active and status == 'processing':
+        if crawl_handler_polling_enabled and status == 'processing':
             import datetime as dt
             created_at = crawl_metadata.get('created_at')
             if created_at:

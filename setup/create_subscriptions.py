@@ -5,18 +5,14 @@ This script creates subscriptions to verify events are actually being published.
 """
 
 import os
-from dotenv import load_dotenv
 from google.cloud import pubsub_v1
 
 def create_subscriptions():
     """Create Pub/Sub subscriptions for all event topics."""
     
-    # Load environment variables from .env file
-    load_dotenv()
-    
     # Initialize Pub/Sub client
     subscriber_client = pubsub_v1.SubscriberClient()
-    project_id = os.getenv('GOOGLE_CLOUD_PROJECT', 'competitor-destroyer')
+    project_id = os.getenv('GOOGLE_CLOUD_PROJECT', 'social-competitor-prod')
     
     # Define topic-subscription mappings
     topic_subscriptions = {
@@ -40,7 +36,7 @@ def create_subscriptions():
         
         try:
             # Try to create the subscription
-            subscriber_client.create_subscription(
+            subscription = subscriber_client.create_subscription(
                 request={
                     "name": subscription_path,
                     "topic": topic_path,

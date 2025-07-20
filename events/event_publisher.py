@@ -113,9 +113,15 @@ class EventPublisher:
             'crawl_id': crawl_id,
             'snapshot_id': snapshot_id,
             'gcs_path': gcs_path,
-            'post_count': post_count,
-            'media_count': media_count,
-            'status': 'completed'
+            'platform': None,
+            'competitor': None,
+            'brand': None,
+            'category': None,
+            'crawl_metadata': {
+                'dataset_id': None,
+                'num_posts': post_count,
+                'crawl_date': datetime.utcnow().isoformat()
+            }
         }
         
         # Include metadata fields that data-processing service expects
@@ -126,6 +132,13 @@ class EventPublisher:
                 'competitor': params.get('competitor'),
                 'brand': params.get('brand'),
                 'category': params.get('category')
+            })
+            
+            # Update crawl_metadata with available information
+            event_data['crawl_metadata'].update({
+                'dataset_id': params.get('dataset_id'),
+                'num_posts': post_count,
+                'crawl_date': crawl_metadata.get('crawl_date', datetime.utcnow().isoformat())
             })
         
         return self.publish('data-ingestion-completed', event_data)

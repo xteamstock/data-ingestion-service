@@ -16,7 +16,7 @@ import aiohttp
 from typing import Dict, Any, List, Optional
 
 from .base import BaseAPIClient, APIClientError
-from brightdata.base_client import BaseClient
+# from brightdata.base_client import BaseClient
 
 
 class BrightDataClient(BaseAPIClient):
@@ -40,7 +40,7 @@ class BrightDataClient(BaseAPIClient):
         self.base_url = "https://api.brightdata.com/datasets/v3"
         
         # Bridge with existing base client for shared functionality
-        self._base_client = BaseClient()
+        # self._base_client = BaseClient()
     
     # =============================================================================
     # CORE WORKFLOW METHODS (Required for 3 main endpoints)
@@ -315,13 +315,13 @@ class BrightDataClient(BaseAPIClient):
     # BRIDGE METHODS (Connect with existing brightdata/ infrastructure)
     # =============================================================================
     
-    def get_legacy_client(self):
-        """Get the legacy BrightData client for backwards compatibility.
+    # def get_legacy_client(self):
+    #     """Get the legacy BrightData client for backwards compatibility.
         
-        Returns:
-            BaseClient: The existing brightdata/ base client
-        """
-        return self._base_client
+    #     Returns:
+    #         BaseClient: The existing brightdata/ base client
+    #     """
+    #     return self._base_client
     
     async def trigger_crawl_legacy_format(self, dataset_id: str, crawl_params: Dict[str, Any]) -> str:
         """Trigger crawl using legacy format compatible with existing handlers.

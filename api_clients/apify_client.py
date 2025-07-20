@@ -28,6 +28,7 @@ class ApifyAPIClient(BaseAPIClient):
             api_token: Apify API token. If None, will try to get from APIFY_API_TOKEN env var
         """
         token = api_token or os.environ.get('APIFY_API_TOKEN')
+        
         if not token:
             raise ValueError("Apify API token is required")
         
