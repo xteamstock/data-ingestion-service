@@ -73,9 +73,7 @@ def trigger_crawl():
         
         # Trigger crawl (handle async method)
         import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(crawl_handler.trigger_crawl(crawl_params))
+        result = asyncio.run(crawl_handler.trigger_crawl(crawl_params))
         
         if result['status'] == 'success':
             # Publish crawl triggered event
@@ -117,9 +115,7 @@ def download_crawl_data(crawl_id):
         
         # Handle async download method
         import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(crawl_handler.download_data(crawl_id))
+        result = asyncio.run(crawl_handler.download_data(crawl_id))
         
         if result['status'] == 'success':
             # Publish ingestion completed event
@@ -163,16 +159,12 @@ def get_crawl_status(crawl_id):
         if platform_handler and platform_handler.config.api_provider == APIProvider.BRIGHTDATA:
             # Handle async check_status
             import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            status_result = loop.run_until_complete(crawl_handler.brightdata_client.check_status(snapshot_id))
+            status_result = asyncio.run(crawl_handler.brightdata_client.check_status(snapshot_id))
             is_ready = status_result.get('is_ready', False)
             error = status_result.get('error')
         elif platform_handler:  # Apify
             import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            status_result = loop.run_until_complete(crawl_handler.apify_client.check_status(snapshot_id))
+            status_result = asyncio.run(crawl_handler.apify_client.check_status(snapshot_id))
             is_ready = status_result.get('is_ready', False)
             error = status_result.get('error')
         else:

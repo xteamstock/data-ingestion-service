@@ -212,22 +212,16 @@ class CrawlHandler:
                 
                 # Check status based on API provider
                 if platform_handler.config.api_provider == APIProvider.BRIGHTDATA:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    status_result = loop.run_until_complete(api_client.check_status(snapshot_id))
+                    status_result = asyncio.run(api_client.check_status(snapshot_id))
                     is_ready = status_result.get('is_ready', False)
                 else:  # Apify
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    status_result = loop.run_until_complete(api_client.check_status(snapshot_id))
+                    status_result = asyncio.run(api_client.check_status(snapshot_id))
                     is_ready = status_result.get('is_ready', False)
                 
                 if is_ready:
                     logger.info(f"Crawl {crawl_id} is ready for download")
                     # Trigger download
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    loop.run_until_complete(self._async_download_data(crawl_id))
+                    asyncio.run(self._async_download_data(crawl_id))
                     break
                     
             except Exception as e:
