@@ -80,7 +80,8 @@ class BrightDataClient(BaseAPIClient):
             }
             
             # Make async request with timeout
-            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=10)
+            # Use generous timeouts to handle API cold starts and network latency
+            timeout = aiohttp.ClientTimeout(total=120, connect=60, sock_read=60)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
                     url,
@@ -108,12 +109,17 @@ class BrightDataClient(BaseAPIClient):
                     
                     return snapshot_id
                     
+        except aiohttp.ClientTimeout as e:
+            logger.error(f"Timeout triggering crawl: {str(e)}")
+            raise APIClientError(f"Request timeout (2 minutes exceeded): {str(e)}", "brightdata")
         except aiohttp.ClientError as e:
+            logger.error(f"Network error triggering crawl: {str(e)}")
             raise APIClientError(f"Failed to trigger crawl: {str(e)}", "brightdata")
         except APIClientError:
             # Re-raise our own errors with status codes intact
             raise
         except Exception as e:
+            logger.error(f"Unexpected error triggering crawl: {str(e)}")
             raise APIClientError(f"Failed to trigger crawl: {str(e)}", "brightdata")
     
     async def check_status(self, job_id: str) -> Dict[str, Any]:
@@ -134,7 +140,8 @@ class BrightDataClient(BaseAPIClient):
             headers = self._get_headers()
             
             # Make async request with timeout
-            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=10)
+            # Use generous timeouts to handle API cold starts and network latency
+            timeout = aiohttp.ClientTimeout(total=120, connect=60, sock_read=60)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, headers=headers) as response:
                     
@@ -179,12 +186,17 @@ class BrightDataClient(BaseAPIClient):
                     
                     return status_info
                     
+        except aiohttp.ClientTimeout as e:
+            logger.error(f"Timeout checking status for {job_id}: {str(e)}")
+            raise APIClientError(f"Status check timeout (2 minutes exceeded): {str(e)}", "brightdata")
         except aiohttp.ClientError as e:
+            logger.error(f"Network error checking status for {job_id}: {str(e)}")
             raise APIClientError(f"Failed to check status: {str(e)}", "brightdata")
         except APIClientError:
             # Re-raise our own errors with status codes intact
             raise
         except Exception as e:
+            logger.error(f"Unexpected error checking status for {job_id}: {str(e)}")
             raise APIClientError(f"Failed to check status: {str(e)}", "brightdata")
     
     async def download_data(self, job_id: str, limit: Optional[int] = None, format_type: str = "json") -> List[Dict[str, Any]]:
@@ -216,7 +228,7 @@ class BrightDataClient(BaseAPIClient):
             
             # Make async request with longer timeout for downloads
             # Downloads can take longer, so we use a 5-minute timeout
-            timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=60)
+            timeout = aiohttp.ClientTimeout(total=300, connect=60, sock_read=60)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(
                     url,
