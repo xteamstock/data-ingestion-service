@@ -13,9 +13,12 @@ import asyncio
 import json
 import os
 import aiohttp
+import logging
 from typing import Dict, Any, List, Optional
 
 from .base import BaseAPIClient, APIClientError
+
+logger = logging.getLogger(__name__)
 # from brightdata.base_client import BaseClient
 
 
@@ -76,8 +79,9 @@ class BrightDataClient(BaseAPIClient):
                 "include_errors": "true"
             }
             
-            # Make async request
-            async with aiohttp.ClientSession() as session:
+            # Make async request with timeout
+            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
                     url,
                     headers=headers,
@@ -129,8 +133,9 @@ class BrightDataClient(BaseAPIClient):
             url = f"{self.base_url}/progress/{job_id}"
             headers = self._get_headers()
             
-            # Make async request
-            async with aiohttp.ClientSession() as session:
+            # Make async request with timeout
+            timeout = aiohttp.ClientTimeout(total=30, connect=10, sock_read=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url, headers=headers) as response:
                     
                     response_data = await response.json()
@@ -207,9 +212,12 @@ class BrightDataClient(BaseAPIClient):
             # Note: BrightData doesn't support query parameters like limit
             # We'll need to filter the results after download if limit is requested
             
+            logger.info(f"Starting download for snapshot {job_id} from URL: {url}")
             
-            # Make async request (no query parameters)
-            async with aiohttp.ClientSession() as session:
+            # Make async request with longer timeout for downloads
+            # Downloads can take longer, so we use a 5-minute timeout
+            timeout = aiohttp.ClientTimeout(total=300, connect=10, sock_read=60)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(
                     url,
                     headers=headers
@@ -229,19 +237,47 @@ class BrightDataClient(BaseAPIClient):
                             response.status
                         )
                     
+                    # Log response headers for debugging
+                    logger.info(f"Download response status: {response.status}")
+                    logger.info(f"Download response headers: {dict(response.headers)}")
+                    
                     # BrightData returns JSONL format (JSON Lines), not standard JSON
                     # Each line is a separate JSON object
-                    raw_text = await response.text()
+                    # Read response in chunks to avoid memory issues
+                    chunks = []
+                    total_bytes = 0
+                    chunk_count = 0
+                    
+                    logger.info("Starting to read response chunks...")
+                    async for chunk in response.content.iter_chunked(8192):
+                        chunk_count += 1
+                        chunk_size = len(chunk)
+                        total_bytes += chunk_size
+                        chunks.append(chunk.decode('utf-8', errors='ignore'))
+                        
+                        # Log progress every 10 chunks
+                        if chunk_count % 10 == 0:
+                            logger.info(f"Downloaded {chunk_count} chunks, {total_bytes} bytes so far...")
+                    
+                    logger.info(f"Download complete: {chunk_count} chunks, {total_bytes} total bytes")
+                    raw_text = ''.join(chunks)
                     data = []
                     
-                    for line in raw_text.strip().split('\n'):
+                    logger.info(f"Parsing JSONL data...")
+                    lines = raw_text.strip().split('\n')
+                    logger.info(f"Found {len(lines)} lines to parse")
+                    
+                    for i, line in enumerate(lines):
                         if line.strip():
                             try:
                                 item = json.loads(line)
                                 data.append(item)
-                            except json.JSONDecodeError:
-                                # Skip invalid lines but continue processing
+                            except json.JSONDecodeError as e:
+                                # Log the error but continue processing
+                                logger.warning(f"Failed to parse line {i+1}: {str(e)}")
                                 continue
+                    
+                    logger.info(f"Successfully parsed {len(data)} items from JSONL")
                     
                     # Apply limit filter if requested
                     if limit and len(data) > limit:
@@ -249,10 +285,17 @@ class BrightDataClient(BaseAPIClient):
                     
                     return data
                     
+        except aiohttp.ClientTimeout as e:
+            logger.error(f"Download timeout for snapshot {job_id}: {str(e)}")
+            raise APIClientError(f"Download timeout after 5 minutes: {str(e)}", "brightdata")
+        except aiohttp.ClientError as e:
+            logger.error(f"Network error during download for snapshot {job_id}: {str(e)}")
+            raise APIClientError(f"Network error during download: {str(e)}", "brightdata")
         except APIClientError:
             # Re-raise our own errors
             raise
         except Exception as e:
+            logger.error(f"Unexpected error during download for snapshot {job_id}: {str(e)}")
             raise APIClientError(f"Failed to download data: {str(e)}", "brightdata")
     
     # =============================================================================
